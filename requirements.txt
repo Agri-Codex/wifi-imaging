@@ -1,0 +1,4 @@
+pywifi
+comtypes
+matplotlib
+pandas
