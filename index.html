@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WiFi Radar — Signal Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            radar: {
+              bg: '#08090b',
+              panel: '#0d0f13',
+              border: '#181b22',
+              accent: '#00ff88',
+              accentDim: 'rgba(0,255,136,0.15)',
+              cyan: '#00d4ff',
+              cyanDim: 'rgba(0,212,255,0.15)',
+              yellow: '#ffcc00',
+              red: '#ff3366',
+              text: '#e1e3e6',
+              muted: '#6b7280',
+              grid: 'rgba(0,255,136,0.08)',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --radar-bg: #08090b;
+      --radar-accent: #00ff88;
+      --radar-cyan: #00d4ff;
+    }
+    
+    body { 
+      font-family: 'Inter', sans-serif; 
+      background: var(--radar-bg);
+    }
+    
+    /* Radar sweep animation */
+    @keyframes radarSweep {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+    
+    @keyframes blip {
+      0% { opacity: 0; transform: scale(0); }
+      30% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(2); }
+    }
+    
+    @keyframes scanLine {
+      0% { top: 0%; opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { top: 100%; opacity: 0; }
+    }
+    
+    @keyframes signalFluctuate {
+      0%, 100% { height: 40%; }
+      25% { height: 70%; }
+      50% { height: 30%; }
+      75% { height: 60%; }
+    }
+    
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .radar-sweep {
+      animation: radarSweep 4s linear infinite;
+      transform-origin: center;
+    }
+    
+    .network-row {
+      animation: fadeInUp 0.3s ease-out forwards;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 2px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #374151; }
+    
+    .signal-bar-fill {
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .radar-grid-line {
+      stroke: rgba(0,255,136,0.06);
+      stroke-width: 1;
+    }
+    
+    .heatmap-gradient {
+      background: radial-gradient(circle at center, 
+        rgba(0,255,136,0.15) 0%, 
+        rgba(0,212,255,0.08) 30%, 
+        transparent 70%);
+    }
+    
+    .glow-text {
+      text-shadow: 0 0 20px rgba(0,255,136,0.3);
+    }
+    
+    .glow-border {
+      box-shadow: 0 0 0 1px rgba(0,255,136,0.2), 0 0 20px rgba(0,255,136,0.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen bg-radar-bg text-radar-text flex flex-col overflow-hidden">
+    
+    <!-- Header -->
+    <header class="h-14 bg-radar-panel border-b border-radar-border flex items-center justify-between px-6 shrink-0 z-30">
+      <div class="flex items-center gap-4">
+        <div class="w-8 h-8 rounded-lg bg-radar-accent/10 border border-radar-accent/30 flex items-center justify-center">
+          <iconify-icon icon="lucide:radio-tower" class="text-radar-accent text-lg"></iconify-icon>
+        </div>
+        <div>
+          <h1 class="text-sm font-semibold tracking-tight text-white">WiFi Radar</h1>
+          <p class="text-[10px] font-mono text-radar-muted uppercase tracking-wider">Signal Intelligence v2.1</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-6">
+        <!-- Status indicators -->
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-radar-accent/5 border border-radar-accent/20">
+            <div class="w-1.5 h-1.5 rounded-full bg-radar-accent animate-pulse"></div>
+            <span class="text-[11px] font-mono text-radar-accent">SCANNING</span>
+          </div>
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-radar-cyan/5 border border-radar-cyan/20">
+            <iconify-icon icon="lucide:wifi" class="text-radar-cyan text-xs"></iconify-icon>
+            <span class="text-[11px] font-mono text-radar-cyan" id="network-count">14 NETWORKS</span>
+          </div>
+        </div>
+        
+        <!-- Movement Alert -->
+        <div id="movement-alert" class="hidden items-center gap-2 px-3 py-1.5 rounded-md bg-radar-red/10 border border-radar-red/30">
+          <iconify-icon icon="lucide:activity" class="text-radar-red text-xs animate-pulse"></iconify-icon>
+          <span class="text-[11px] font-mono text-radar-red">MOVEMENT DETECTED</span>
+        </div>
+        
+        <button id="export-btn" class="flex items-center gap-2 px-4 py-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all text-xs font-medium">
+          <iconify-icon icon="lucide:download" class="text-radar-muted"></iconify-icon>
+          <span>Export CSV</span>
+        </button>
+      </div>
+    </header>
+    
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+      
+      <!-- Left: Radar Visualization -->
+      <section class="flex-1 relative flex flex-col items-center justify-center p-8 bg-radar-bg">
+        <!-- Background grid effect -->
+        <div class="absolute inset-0 opacity-30" style="background-image: linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px); background-size: 40px 40px;"></div>
+        
+        <!-- Radar Container -->
+        <div class="relative w-[520px] h-[520px] max-w-full max-h-full">
+          <!-- Radar circles -->
+          <div class="absolute inset-0 rounded-full border border-radar-grid"></div>
+          <div class="absolute inset-[15%] rounded-full border border-radar-grid"></div>
+          <div class="absolute inset-[30%] rounded-full border border-radar-grid"></div>
+          <div class="absolute inset-[45%] rounded-full border border-radar-grid"></div>
+          
+          <!-- Crosshairs -->
+          <div class="absolute top-0 bottom-0 left-1/2 w-px bg-radar-grid"></div>
+          <div class="absolute left-0 right-0 top-1/2 h-px bg-radar-grid"></div>
+          
+          <!-- Heatmap overlay -->
+          <div class="absolute inset-[10%] rounded-full heatmap-gradient"></div>
+          
+          <!-- Sweep line -->
+          <div class="radar-sweep absolute inset-0">
+            <div class="absolute top-1/2 left-1/2 w-[50%] h-[2px] origin-left" style="background: linear-gradient(90deg, transparent, rgba(0,255,136,0.6), rgba(0,255,136,0.9)); box-shadow: 0 0 15px rgba(0,255,136,0.3);"></div>
+          </div>
+          
+          <!-- Center dot -->
+          <div class="absolute top-1/2 left-1/2 w-2 h-2 -ml-1 -mt-1 rounded-full bg-radar-accent shadow-[0_0_10px_rgba(0,255,136,0.5)]"></div>
+          
+          <!-- Signal blips (network positions) -->
+          <div class="signal-blip absolute w-3 h-3 rounded-full bg-radar-accent/80 shadow-[0_0_12px_rgba(0,255,136,0.6)]" style="top: 28%; left: 35%; animation: pulse 2s ease-in-out infinite;">
+            <div class="absolute -inset-2 rounded-full border border-radar-accent/30 animate-ping"></div>
+          </div>
+          
+          <div class="signal-blip absolute w-2.5 h-2.5 rounded-full bg-radar-cyan/80 shadow-[0_0_10px_rgba(0,212,255,0.5)]" style="top: 62%; left: 68%; animation: pulse 2.5s ease-in-out infinite 0.5s;">
+            <div class="absolute -inset-2 rounded-full border border-radar-cyan/30 animate-ping" style="animation-delay: 0.5s;"></div>
+          </div>
+          
+          <div class="signal-blip absolute w-2 h-2 rounded-full bg-radar-yellow/80 shadow-[0_0_10px_rgba(255,204,0,0.5)]" style="top: 45%; left: 72%; animation: pulse 3s ease-in-out infinite 1s;"></div>
+          
+          <div class="signal-blip absolute w-3 h-3 rounded-full bg-radar-accent/60 shadow-[0_0_12px_rgba(0,255,136,0.4)]" style="top: 18%; left: 58%; animation: pulse 2.2s ease-in-out infinite 0.3s;">
+            <div class="absolute -inset-2 rounded-full border border-radar-accent/20 animate-ping" style="animation-delay: 0.3s;"></div>
+          </div>
+          
+          <div class="signal-blip absolute w-2 h-2 rounded-full bg-radar-red/70 shadow-[0_0_10px_rgba(255,51,102,0.5)]" style="top: 75%; left: 42%; animation: pulse 2.8s ease-in-out infinite 0.8s;"></div>
+          
+          <!-- Distance rings labels -->
+          <div class="absolute top-[7%] left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-muted/60">10m</div>
+          <div class="absolute top-[22%] left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-muted/60">7.5m</div>
+          <div class="absolute top-[37%] left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-muted/60">5m</div>
+          <div class="absolute top-[52%] left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-muted/60">2.5m</div>
+          
+          <!-- Direction labels -->
+          <div class="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-mono text-radar-muted/40">N</div>
+          <div class="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-mono text-radar-muted/40">S</div>
+          <div class="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-radar-muted/40">W</div>
+          <div class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-radar-muted/40">E</div>
+        </div>
+        
+        <!-- Bottom-left: Channel distribution mini visualization -->
+        <div class="absolute bottom-6 left-6 w-64 bg-radar-panel/80 backdrop-blur-sm border border-radar-border rounded-xl p-4">
+          <h3 class="text-[11px] font-mono text-radar-muted uppercase tracking-wider mb-3">Channel Load</h3>
+          <div class="flex items-end gap-1 h-16">
+            <div class="flex-1 bg-radar-accent/20 rounded-t-sm relative group" style="height: 40%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">1</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/15 rounded-t-sm relative group" style="height: 25%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">2</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/30 rounded-t-sm relative group" style="height: 65%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">3</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/10 rounded-t-sm relative group" style="height: 15%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">4</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/25 rounded-t-sm relative group" style="height: 50%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">5</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/40 rounded-t-sm relative group" style="height: 80%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">6</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/20 rounded-t-sm relative group" style="height: 35%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">7</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/35 rounded-t-sm relative group" style="height: 70%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">8</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/15 rounded-t-sm relative group" style="height: 30%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">9</div>
+            </div>
+            <div class="flex-1 bg-radar-accent/10 rounded-t-sm relative group" style="height: 20%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-accent opacity-0 group-hover:opacity-100 transition-opacity">10</div>
+            </div>
+            <div class="flex-1 bg-radar-cyan/25 rounded-t-sm relative group" style="height: 55%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-cyan opacity-0 group-hover:opacity-100 transition-opacity">36</div>
+            </div>
+            <div class="flex-1 bg-radar-cyan/35 rounded-t-sm relative group" style="height: 75%;">
+              <div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-mono text-radar-cyan opacity-0 group-hover:opacity-100 transition-opacity">40</div>
+            </div>
+          </div>
+          <div class="flex justify-between mt-2">
+            <span class="text-[9px] font-mono text-radar-muted/50">2.4 GHz</span>
+            <span class="text-[9px] font-mono text-radar-muted/50">5 GHz</span>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Right: Network List Panel -->
+      <aside class="w-[420px] bg-radar-panel border-l border-radar-border flex flex-col shrink-0">
+        <!-- Panel header -->
+        <div class="h-12 border-b border-radar-border flex items-center justify-between px-5 shrink-0">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-radar-muted">Detected Networks</h2>
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-mono text-radar-accent" id="live-indicator">LIVE</span>
+            <div class="w-1.5 h-1.5 rounded-full bg-radar-accent animate-pulse"></div>
+          </div>
+        </div>
+        
+        <!-- Network list -->
+        <div id="network-list" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+          <!-- Networks will be populated by JS -->
+        </div>
+        
+        <!-- Selected network details -->
+        <div id="network-details" class="h-48 border-t border-radar-border p-4 shrink-0">
+          <h3 class="text-[11px] font-mono text-radar-muted uppercase tracking-wider mb-3">Signal Details</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-radar-bg rounded-lg p-3 border border-radar-border">
+              <div class="text-[9px] font-mono text-radar-muted uppercase mb-1">RSSI</div>
+              <div class="text-lg font-mono font-semibold text-radar-accent" id="detail-rssi">-42 dBm</div>
+              <div class="w-full h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
+                <div class="h-full bg-radar-accent rounded-full signal-bar-fill" style="width: 78%;"></div>
+              </div>
+            </div>
+            <div class="bg-radar-bg rounded-lg p-3 border border-radar-border">
+              <div class="text-[9px] font-mono text-radar-muted uppercase mb-1">Frequency</div>
+              <div class="text-lg font-mono font-semibold text-radar-cyan" id="detail-freq">5.2 GHz</div>
+              <div class="text-[10px] font-mono text-radar-muted mt-1">Channel 40</div>
+            </div>
+            <div class="bg-radar-bg rounded-lg p-3 border border-radar-border">
+              <div class="text-[9px] font-mono text-radar-muted uppercase mb-1">MAC Address</div>
+              <div class="text-xs font-mono text-radar-text truncate" id="detail-mac">A4:91:B1:2C:84:F0</div>
+            </div>
+            <div class="bg-radar-bg rounded-lg p-3 border border-radar-border">
+              <div class="text-[9px] font-mono text-radar-muted uppercase mb-1">Security</div>
+              <div class="text-xs font-mono text-radar-yellow" id="detail-sec">WPA2-Personal</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+    
+    <!-- Bottom: Live Signal Graph -->
+    <section class="h-56 bg-radar-panel border-t border-radar-border shrink-0 flex flex-col">
+      <div class="h-9 border-b border-radar-border flex items-center justify-between px-5">
+        <div class="flex items-center gap-4">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-radar-muted">Signal History</h2>
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-1.5">
+              <div class="w-2 h-2 rounded-full bg-radar-accent"></div>
+              <span class="text-[10px] font-mono text-radar-muted">HomeNetwork_5G</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-2 h-2 rounded-full bg-radar-cyan"></div>
+              <span class="text-[10px] font-mono text-radar-muted">Office_WiFi</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-2 h-2 rounded-full bg-radar-yellow"></div>
+              <span class="text-[10px] font-mono text-radar-muted">Guest_Access</span>
+            </div>
+          </div>
+        </div>
+        <div class="text-[10px] font-mono text-radar-muted">Last 60 seconds</div>
+      </div>
+      <div class="flex-1 relative px-5 py-3">
+        <canvas id="signalGraph" class="w-full h-full"></canvas>
+      </div>
+    </section>
+    
+  </div>
+
+  <script>
+    // Network data
+    const networks = [
+      { ssid: 'HomeNetwork_5G', mac: 'A4:91:B1:2C:84:F0', rssi: -42, channel: 40, freq: '5.2 GHz', sec: 'WPA3', color: 'radar-accent' },
+      { ssid: 'Office_WiFi', mac: 'B8:27:EB:4F:11:2A', rssi: -58, channel: 6, freq: '2.4 GHz', sec: 'WPA2', color: 'radar-cyan' },
+      { ssid: 'Guest_Access', mac: 'CC:32:E5:8A:9D:41', rssi: -71, channel: 11, freq: '2.4 GHz', sec: 'Open', color: 'radar-yellow' },
+      { ssid: 'IoT_Hub_Main', mac: 'D4:6D:6D:F0:CA:BB', rssi: -45, channel: 36, freq: '5.2 GHz', sec: 'WPA2', color: 'radar-accent' },
+      { ssid: 'Neighbor_5G', mac: 'F0:9F:C2:77:3E:19', rssi: -83, channel: 149, freq: '5.8 GHz', sec: 'WPA2', color: 'radar-muted' },
+      { ssid: 'XfinityWiFi', mac: 'A0:04:60:12:EF:55', rssi: -67, channel: 1, freq: '2.4 GHz', sec: 'Open', color: 'radar-muted' },
+      { ssid: 'SmartTV_Link', mac: '90:9A:4A:B2:1C:88', rssi: -52, channel: 44, freq: '5.2 GHz', sec: 'WPA2', color: 'radar-cyan' },
+      { ssid: 'Printer_HP_Laser', mac: '68:05:CA:3D:71:FF', rssi: -38, channel: 6, freq: '2.4 GHz', sec: 'WPA2', color: 'radar-accent' },
+    ];
+
+    // Render network list
+    function renderNetworks() {
+      const container = document.getElementById('network-list');
+      container.innerHTML = networks.map((net, i) => {
+        const strength = Math.max(0, Math.min(100, 2 * (net.rssi + 100)));
+        const strengthColor = strength > 70 ? 'bg-radar-accent' : strength > 40 ? 'bg-radar-cyan' : 'bg-radar-yellow';
+        const strengthText = strength > 70 ? 'text-radar-accent' : strength > 40 ? 'text-radar-cyan' : 'text-radar-yellow';
+        
+        return `
+          <div class="network-row bg-radar-bg border border-radar-border rounded-xl p-3.5 cursor-pointer hover:border-radar-accent/30 hover:bg-radar-accent/5 transition-all group" style="animation-delay: ${i * 0.05}s;" onclick="selectNetwork(${i})">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2.5">
+                <iconify-icon icon="lucide:wifi" class="text-${net.color === 'radar-accent' ? 'radar-accent' : net.color === 'radar-cyan' ? 'radar-cyan' : 'radar-yellow'} text-sm"></iconify-icon>
+                <span class="text-sm font-medium text-white">${net.ssid}</span>
+              </div>
+              <span class="text-xs font-mono ${strengthText}">${net.rssi} dBm</span>
+            </div>
+            <div class="flex items-center gap-4 mb-2">
+              <span class="text-[10px] font-mono text-radar-muted">${net.mac}</span>
+              <span class="text-[10px] font-mono text-radar-muted">Ch ${net.channel}</span>
+              <span class="text-[10px] font-mono text-radar-muted">${net.freq}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
+                <div class="h-full ${strengthColor} rounded-full signal-bar-fill" style="width: ${strength}%;"></div>
+              </div>
+              <span class="text-[10px] font-mono text-radar-muted w-8 text-right">${strength}%</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectNetwork(index) {
+      const net = networks[index];
+      document.getElementById('detail-rssi').textContent = net.rssi + ' dBm';
+      document.getElementById('detail-freq').textContent = net.freq;
+      document.getElementById('detail-mac').textContent = net.mac;
+      document.getElementById('detail-sec').textContent = net.sec;
+    }
+
+    // Signal graph
+    const canvas = document.getElementById('signalGraph');
+    const ctx = canvas.getContext('2d');
+    
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const graphData = {
+      net1: [],
+      net2: [],
+      net3: []
+    };
+
+    for (let i = 0; i < 60; i++) {
+      graphData.net1.push(-42 + Math.random() * 8 - 4);
+      graphData.net2.push(-58 + Math.random() * 10 - 5);
+      graphData.net3.push(-71 + Math.random() * 12 - 6);
+    }
+
+    function drawGraph() {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // Grid
+      ctx.strokeStyle = 'rgba(0,255,136,0.04)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 5; i++) {
+        const y = (h / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+      for (let i = 0; i < 7; i++) {
+        const x = (w / 6) * i;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+
+      // Y-axis labels
+      ctx.fillStyle = 'rgba(107,114,128,0.5)';
+      ctx.font = '10px JetBrains Mono';
+      ctx.textAlign = 'right';
+      [-30, -50, -70, -90].forEach((val, i) => {
+        const y = (h / 4) * i + 12;
+        ctx.fillText(val + ' dBm', 35, y);
+      });
+
+      function drawLine(data, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        data.forEach((val, i) => {
+          const x = (i / (data.length - 1)) * (w - 50) + 45;
+          const normalized = (val + 30) / -60;
+          const y = normalized * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Glow
+        ctx.strokeStyle = color.replace(')', ', 0.1)').replace('rgb', 'rgba');
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        data.forEach((val, i) => {
+          const x = (i / (data.length - 1)) * (w - 50) + 45;
+          const normalized = (val + 30) / -60;
+          const y = normalized * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+
+      drawLine(graphData.net1, 'rgb(0,255,136)');
+      drawLine(graphData.net2, 'rgb(0,212,255)');
+      drawLine(graphData.net3, 'rgb(255,204,0)');
+    }
+
+    function updateGraph() {
+      graphData.net1.shift();
+      graphData.net1.push(-42 + Math.random() * 8 - 4);
+      graphData.net2.shift();
+      graphData.net2.push(-58 + Math.random() * 10 - 5);
+      graphData.net3.shift();
+      graphData.net3.push(-71 + Math.random() * 12 - 6);
+      drawGraph();
+    }
+
+    // Simulate live updates
+    setInterval(() => {
+      networks.forEach(net => {
+        net.rssi += Math.random() * 4 - 2;
+        net.rssi = Math.max(-95, Math.min(-20, net.rssi));
+      });
+      renderNetworks();
+      updateGraph();
+      
+      // Random movement detection
+      const alert = document.getElementById('movement-alert');
+      if (Math.random() > 0.95) {
+        alert.classList.remove('hidden');
+        alert.classList.add('flex');
+        setTimeout(() => {
+          alert.classList.add('hidden');
+          alert.classList.remove('flex');
+        }, 3000);
+      }
+    }, 1000);
+
+    // Initial render
+    renderNetworks();
+    drawGraph();
+
+    // Export button
+    document.getElementById('export-btn').addEventListener('click', () => {
+      alert('Exporting scan data to CSV...');
+    });
+  </script>
+</body>
+</html>
+```
+
+Please reference this design and implement it into our codebase; Try to understand the structure, which part of our codebase is relevant and implement
